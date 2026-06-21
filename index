@@ -1,0 +1,137 @@
+import React, { useEffect, useState, useCallback } from 'react';
+import {
+  View, Text, FlatList, TouchableOpacity, StyleSheet,
+  Image, ActivityIndicator, TextInput,
+} from 'react-native';
+import { supabase } from '../lib/supabase';
+
+const SERVICE_FILTERS = ['All', 'local', 'intercity', 'office', 'storage'];
+const SORT_OPTIONS = ['Rating', 'Price'];
+
+export default function BrowseCompaniesScreen({ route, navigation }) {
+  const moveRequestId = route.params?.moveRequestId;
+  const [companies, setCompanies] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [serviceFilter, setServiceFilter] = useState('All');
+  const [sortBy, setSortBy] = useState('Rating');
+
+  const fetchCompanies = useCallback(async () => {
+    setLoading(true);
+    let query = supabase
+      .from('company_profiles')
+      .select('*')
+      .eq('verification_status', 'verified');
+
+    if (serviceFilter !== 'All') {
+      query = query.contains('service_types', [serviceFilter]);
+    }
+    if (search) {
+      query = query.ilike('business_name', `%${search}%`);
+    }
+    query = query.order('avg_rating', { ascending: sortBy !== 'Rating' });
+
+    const { data, error } = await query;
+    if (!error) setCompanies(data);
+    setLoading(false);
+  }, [serviceFilter, search, sortBy]);
+
+  useEffect(() => {
+    fetchCompanies();
+  }, [fetchCompanies]);
+
+  return (
+    <View style={styles.container}>
+      <TextInput
+        style={styles.search}
+        placeholder="Search company name..."
+        value={search}
+        onChangeText={setSearch}
+      />
+
+      <View style={styles.filterRow}>
+        {SERVICE_FILTERS.map((f) => (
+          <TouchableOpacity
+            key={f}
+            style={[styles.chip, serviceFilter === f && styles.chipActive]}
+            onPress={() => setServiceFilter(f)}
+          >
+            <Text style={[styles.chipText, serviceFilter === f && styles.chipTextActive]}>{f}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <View style={styles.sortRow}>
+        <Text style={{ color: '#888', fontSize: 13 }}>Sort by:</Text>
+        {SORT_OPTIONS.map((s) => (
+          <TouchableOpacity key={s} onPress={() => setSortBy(s)}>
+            <Text style={[styles.sortText, sortBy === s && styles.sortTextActive]}>{s}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {loading ? (
+        <ActivityIndicator style={{ marginTop: 30 }} />
+      ) : (
+        <FlatList
+          data={companies}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ paddingBottom: 30 }}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() =>
+                navigation.navigate('CompanyDetail', { companyId: item.id, moveRequestId })
+              }
+            >
+              {item.logo_url ? (
+                <Image source={{ uri: item.logo_url }} style={styles.logo} />
+              ) : (
+                <View style={[styles.logo, styles.logoPlaceholder]}>
+                  <Text style={{ fontSize: 22 }}>🚚</Text>
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.name}>{item.business_name}</Text>
+                <Text style={styles.meta}>⭐ {item.avg_rating || 'New'} · {item.years_in_business || 0} yrs</Text>
+                <Text style={styles.areas} numberOfLines={1}>
+                  {Array.isArray(item.service_areas) ? item.service_areas.join(', ') : ''}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          )}
+          ListEmptyComponent={<Text style={styles.empty}>No companies match your filters.</Text>}
+        />
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#fff', padding: 16, paddingTop: 50 },
+  search: {
+    borderWidth: 1, borderColor: '#ddd', borderRadius: 10,
+    padding: 12, fontSize: 15, marginBottom: 12,
+  },
+  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  chip: {
+    paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16,
+    borderWidth: 1, borderColor: '#ddd',
+  },
+  chipActive: { backgroundColor: '#FF6B35', borderColor: '#FF6B35' },
+  chipText: { fontSize: 12, color: '#333' },
+  chipTextActive: { color: '#fff', fontWeight: '600' },
+  sortRow: { flexDirection: 'row', gap: 14, alignItems: 'center', marginBottom: 14 },
+  sortText: { fontSize: 13, color: '#888' },
+  sortTextActive: { color: '#FF6B35', fontWeight: '700' },
+  card: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#F8F9FB', borderRadius: 12, padding: 12, marginBottom: 10,
+  },
+  logo: { width: 52, height: 52, borderRadius: 8, marginRight: 12 },
+  logoPlaceholder: { backgroundColor: '#eee', alignItems: 'center', justifyContent: 'center' },
+  name: { fontSize: 15, fontWeight: '700', color: '#1A2B4C' },
+  meta: { fontSize: 13, color: '#666', marginTop: 2 },
+  areas: { fontSize: 12, color: '#999', marginTop: 2 },
+  empty: { textAlign: 'center', color: '#999', marginTop: 30 },
+});
